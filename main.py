@@ -2,6 +2,8 @@ import math
 import random
 import os
 from time import sleep
+import networkx as nx
+from collections import deque
 
 
 class Game:
@@ -13,7 +15,9 @@ class Game:
         self.scores = scores
 
     def printGame(self):
+
         print("Scores:%d" % self.scores)
+        print("******************************************************************")
         for i in range(self.map.height):
             for j in range(self.map.width):
 
@@ -28,36 +32,36 @@ class Game:
                 else:
                     print(self.map.boardArray[i][j], end=" ")
             print(" ")
-    # minimax algorithm
+        print("******************************************************************")
 
-    def minimax2(self, currDepth, targetDepth, isMaximizing):
+    # minimax algorithm
+    def minimax2(self, currDepth, targetDepth, alpha, beta, isMaximizing):
         # base case
         if currDepth == targetDepth:
-            return self.calculateScore2()
-        # if pacman turn
+            return self.calculate_score()
 
-        if isMaximizing == 0:
-            bestPoint = float('-inf')
+        if isMaximizing == 0:  # Pacman's turn
             bestMove = 0
-            for i in range(0, 4):
+            for i in range(4):
                 if isValid(self.map.boardArray, self.pacman.x, self.pacman.y, i) != -1:
                     possiblex, possibley = isValid(self.map.boardArray, self.pacman.x, self.pacman.y, i)
                     xcurr, ycurr = self.pacman.x, self.pacman.y
-                    # back tracking
-
-                    self.pacman.x, self.pacman.y = possiblex, possibley
                     dot = self.map.boardArray[possiblex][possibley]
-                    currscore = game.scores
+                    self.pacman.x, self.pacman.y = possiblex, possibley
 
-                    point = self.minimax2(currDepth, targetDepth, 1)
+                    point = self.minimax2(currDepth, targetDepth, alpha, beta, 1)
 
                     self.pacman.x = xcurr
                     self.pacman.y = ycurr
                     self.map.boardArray[possiblex][possibley] = dot
 
-                    if bestPoint < point:
-                        bestPoint = point
+                    if point > alpha:
+                        alpha = point
                         bestMove = i
+
+                    if alpha >= beta:
+                        break  # Beta cut-off
+
             if currDepth == 0:
                 # updating scores
                 tempx, tempy = isValid(self.map.boardArray, self.pacman.x, self.pacman.y, bestMove)
@@ -68,62 +72,99 @@ class Game:
                 self.map.boardArray[tempx][tempy] = " "
                 return isValid(self.map.boardArray, self.pacman.x, self.pacman.y, bestMove)
             else:
-                return bestPoint
-        #     ghost one turn
-        if isMaximizing == 1:
+                return alpha
+
+        elif isMaximizing == 1:  # Ghost one's turn
             bestPoint = float('inf')
-            for i in range(0, 4):
+            for i in range(4):
                 if isValid(self.map.boardArray, self.ghost1.x, self.ghost1.y, i) != -1:
                     possiblex, possibley = isValid(self.map.boardArray, self.ghost1.x, self.ghost1.y, i)
                     xcurr, ycurr = self.ghost1.x, self.ghost1.y
 
                     self.ghost1.x, self.ghost1.y = possiblex, possibley
-                    currscore = self.scores
 
-                    point = self.minimax2(currDepth, targetDepth, 2)
+                    point = self.minimax2(currDepth, targetDepth, alpha, beta, 2)
                     self.ghost1.x = xcurr
                     self.ghost1.y = ycurr
 
-                    if bestPoint > point:
+                    if point < bestPoint:
                         bestPoint = point
 
-            return bestPoint
-        # ghost two turn
+                    if beta <= alpha:
+                        break  # Alpha cut-off
 
-        if isMaximizing == 2:
+            return bestPoint
+
+        elif isMaximizing == 2:  # Ghost two's turn
             bestPoint = float('inf')
-            for i in range(0, 4):
+            for i in range(4):
                 if isValid(self.map.boardArray, self.ghost2.x, self.ghost2.y, i) != -1:
                     possiblex, possibley = isValid(self.map.boardArray, self.ghost2.x, self.ghost2.y, i)
                     xcurr, ycurr = self.ghost2.x, self.ghost2.y
                     self.ghost2.x, self.ghost2.y = possiblex, possibley
 
-                    currscore = self.scores
-
-                    point = self.minimax2(currDepth + 1, targetDepth, 0)
+                    point = self.minimax2(currDepth + 1, targetDepth, alpha, beta, 0)
                     self.ghost2.x = xcurr
                     self.ghost2.y = ycurr
 
-                    if bestPoint > point:
+                    if point < bestPoint:
                         bestPoint = point
 
+                    if beta <= alpha:
+                        break  # Alpha cut-off
+
             return bestPoint
+
     # utility function
 
-    def calculateScore2(self):
-        distance1 = math.sqrt(((self.pacman.x - self.ghost1.x) ** 2) + ((self.pacman.y - self.ghost1.y) ** 2))
-        distance2 = math.sqrt(((self.pacman.x - self.ghost2.x) ** 2) + ((self.pacman.y - self.ghost2.y) ** 2))
-        # print("adsfs", min(distance1, distance2))
-        point = float('inf')
-        for i in range(0, 11):
-            for j in range(0, 20):
-                if self.map.boardArray[i][j] == '+':
-                    foodDistance = math.sqrt(((self.pacman.x - i) ** 2) + ((self.pacman.y - j) ** 2))
-                    if foodDistance < point:
-                        point = foodDistance
-        score = point * -1
-        if min(distance1, distance2) < 5:
-            score -= 100
+    def calculate_score(self):
+
+        graph = nx.Graph()
+        # creating graph
+        for i in range(11):
+            for j in range(20):
+                if self.map.boardArray[i][j] != "#":
+                    graph.add_node((i, j))
+
+                    # Add edges based on valid moves
+                    if i > 0 and self.map.boardArray[i - 1][j] != "#":
+                        graph.add_edge((i, j), (i - 1, j))
+                    if i < self.map.height - 1 and self.map.boardArray[i + 1][j] != "#":
+                        graph.add_edge((i, j), (i + 1, j))
+                    if j > 0 and self.map.boardArray[i][j - 1] != "#":
+                        graph.add_edge((i, j), (i, j - 1))
+                    if j < self.map.width - 1 and self.map.boardArray[i][j + 1] != "#":
+                        graph.add_edge((i, j), (i, j + 1))
+
+        visited = set()
+        none = float('inf')
+
+        def bfs(graph, start):
+            queue = deque([(start, 0)])
+            while queue:
+                current_node, distance = queue.popleft()
+                x, y = current_node
+                visited.add(current_node)
+                if self.map.boardArray[x][y] == "+":
+                    return distance
+
+                for neighbor in graph.neighbors(current_node):
+                    if neighbor not in visited:
+                        queue.append((neighbor, distance + 1))
+                        visited.add(neighbor)
+            return none
+
+        disOne = nx.shortest_path_length(graph, (self.pacman.x, self.pacman.y), (self.ghost1.x, self.ghost1.y))
+        disTwo = nx.shortest_path_length(graph, (self.pacman.x, self.pacman.y), (self.ghost2.x, self.ghost2.y))
+
+        closestDot = bfs(graph, (self.pacman.x, self.pacman.y))
+
+        sc = math.sqrt((self.map.height - 2) ** 2 + (self.map.width - 2) ** 2)
+
+        score = ((sc - closestDot) / sc) * 9
+
+        if min(disOne, disTwo) < 2:
+            score = score * -1
         return score
 
 
@@ -237,8 +278,8 @@ def finishGame(game):
         return -1
     if game.pacman.x == game.ghost2.x and game.pacman.y == game.ghost2.y:
         return -1
-    for i in range(0, 11):
-        for j in range(0, 20):
+    for i in range(11):
+        for j in range(20):
             if game.map.boardArray[i][j] == '+':
                 return 0
 
@@ -250,6 +291,8 @@ width = 20
 arr = [[0] * width] * height
 map = Board(arr, height, width)
 map.fill()
+alpha = float('-inf')
+beta = float('inf')
 # creating objects
 pacman = Pacman(8, 8)
 ghost1 = Ghosts(1, 1)
@@ -268,7 +311,7 @@ while True:
         break
 
     game.printGame()
-    game.pacman.x, game.pacman.y = game.minimax2(0, 1, 0)
+    game.pacman.x, game.pacman.y = game.minimax2(0, 1, alpha, beta, 0)
     randMove = randomGhost()
     if isValid(map.boardArray, ghost1.x, ghost1.y, randMove) != -1:
         ghost1.x, ghost1.y = isValid(map.boardArray, ghost1.x, ghost1.y, randMove)
